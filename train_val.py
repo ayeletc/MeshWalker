@@ -2,7 +2,7 @@ import os
 import time
 import sys
 from easydict import EasyDict
-
+import pandas as pd
 import numpy as np
 import tensorflow as tf
 import tensorflow_addons as tfa
@@ -11,6 +11,8 @@ import rnn_model
 import dataset
 import utils
 import params_setting
+import attention_model
+
 
 
 def train_val(params):
@@ -35,6 +37,7 @@ def train_val(params):
     train_datasets.append(this_train_dataset)
     max_train_size = max(max_train_size, n_trn_items)
   train_epoch_size = max(8, int(max_train_size / params.n_walks_per_model / params.batch_size))
+  #train_epoch_size = 2
   print('train_epoch_size:', train_epoch_size)
   if params.datasets2use['test'] is None:
     test_dataset = None
@@ -74,7 +77,22 @@ def train_val(params):
 
   if params.net == 'RnnWalkNet':
     dnn_model = rnn_model.RnnWalkNet(params, params.n_classes, params.net_input_dim, init_net_using, optimizer=optimizer)
-
+  elif params.net == 'Transformer':
+    num_layers = 4
+    d_model = 128
+    dff = 512
+    num_heads = 8
+    dropout_rate = 0.1
+    dnn_model = attention_model.Transformer(num_layers=num_layers,
+    d_model=d_model,
+    num_heads=num_heads,
+    dff=dff,
+    #input_vocab_size=tokenizers.pt.get_vocab_size(),
+    #target_vocab_size=params.n_classes,
+    pe_input=1000,
+    pe_target=1000,
+    params=params,
+    rate=dropout_rate)
   # Other initializations
   # ---------------------
   time_msrs = {}
@@ -101,7 +119,14 @@ def train_val(params):
     with tf.GradientTape() as tape:
       if one_label_per_model:
         labels = tf.reshape(tf.transpose(tf.stack((labels_,)*params.n_walks_per_model)),(-1,))
-        predictions = dnn_model(model_ftrs)
+        if params.net == 'RnnWalkNet':
+          predictions = dnn_model(model_ftrs)
+        elif params.net == 'Transformer':
+          enc_padding_mask, combined_mask, dec_padding_mask = attention_model.create_masks(model_ftrs, labels[:, tf.newaxis])
+          print(model_ftrs.shape)
+        predictions, attenetion_weights = dnn_model(model_ftrs, labels[:, tf.newaxis], True, None, None, None)
+          # predictions, attenetion_weights = dnn_model(model_ftrs, labels[:, tf.newaxis], True, enc_padding_mask, combined_mask, dec_padding_mask)
+        print('predictions shape: ', predictions.shape)
       else:
         labels = tf.reshape(labels_, (-1, sp[-2]))
         skip = params.min_seq_len
@@ -119,20 +144,34 @@ def train_val(params):
     return loss
 
   test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='test_accuracy')
-  @tf.function
-  def test_step(model_ftrs_, labels_, one_label_per_model):
+  #@tf.function
+  def test_step(model_ftrs_, labels_, name, one_label_per_model):
     sp = model_ftrs_.shape
     model_ftrs = tf.reshape(model_ftrs_, (-1, sp[-2], sp[-1]))
     if one_label_per_model:
       labels = tf.reshape(tf.transpose(tf.stack((labels_,) * params.n_walks_per_model)), (-1,))
-      predictions = dnn_model(model_ftrs, training=False)
+      predictions, attention = dnn_model(model_ftrs, labels[:, tf.newaxis], training=False, enc_padding_mask=None, look_ahead_mask=None, dec_padding_mask=None)
+      # predictions = dnn_model(model_ftrs, training=False)
     else:
       labels = tf.reshape(labels_, (-1, sp[-2]))
       skip = params.min_seq_len
       predictions = dnn_model(model_ftrs, training=False)[:, skip:]
       labels = labels[:, skip + 1:]
+    # # save attention
+    # with tf.Session() as sess:
+    #   attention_val = sess.run(attention['decoder_layer_4_block2'])
+    #   np.save('attention.npy', attention_val, allow_pickle=False)
+    attention_df = pd.DataFrame(attention['decoder_layer4_block2'].numpy())
     best_pred = tf.math.argmax(predictions, axis=-1)
-    test_accuracy(labels, predictions)
+    #print(tf.squeeze(predictions).shape)
+    print("label shape: ", labels.shape)
+    print("prediction shape: ", predictions.shape)
+    test_accuracy(tf.expand_dims(labels, 1), tf.squeeze(predictions, 1))
+    #print("prediction: ", best_pred)
+    #print("labels: ", labels)
+
+   # preditctions_squeezed = tf.reshape(predictions, (predictions(0), predictions(2)))
+    #test_accuracy(tf.one_hot(labels, 22),preditctions_squeezed )
     confusion = tf.math.confusion_matrix(labels=tf.reshape(labels, (-1,)), predictions=tf.reshape(best_pred, (-1,)),
                                          num_classes=params.n_classes)
     return confusion
@@ -202,12 +241,12 @@ def train_val(params):
       # Run test on part of the test set
       if test_dataset is not None:
         n_test_iters = 0
-        tb = time.time()
+
         for name, model_ftrs, labels in test_dataset:
           n_test_iters += model_ftrs.shape[0]
           if n_test_iters > params.n_models_per_test_epoch:
             break
-          confusion = test_step(model_ftrs, labels, one_label_per_model=one_label_per_model)
+          confusion = test_step(model_ftrs, labels, name, one_label_per_model=one_label_per_model)
           dataset_type = utils.get_dataset_type_from_name(name)
           if dataset_type in all_confusion.keys():
             all_confusion[dataset_type] += confusion
@@ -297,4 +336,3 @@ if __name__ == '__main__':
         run_one_job(job_, job_part)
     else:
       run_one_job(job, job_part)
-
