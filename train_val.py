@@ -150,18 +150,29 @@ def train_val(params):
     model_ftrs = tf.reshape(model_ftrs_, (-1, sp[-2], sp[-1]))
     if one_label_per_model:
       labels = tf.reshape(tf.transpose(tf.stack((labels_,) * params.n_walks_per_model)), (-1,))
-      predictions, attention = dnn_model(model_ftrs, labels[:, tf.newaxis], training=False, enc_padding_mask=None, look_ahead_mask=None, dec_padding_mask=None)
+      if params.net == 'RnnWalkNet':
+        predictions = dnn_model(model_ftrs)
+      elif params.net == 'Transformer':
+        predictions, attention = dnn_model(model_ftrs, labels[:, tf.newaxis], training=False, enc_padding_mask=None, look_ahead_mask=None, dec_padding_mask=None)
       # predictions = dnn_model(model_ftrs, training=False)
     else:
       labels = tf.reshape(labels_, (-1, sp[-2]))
       skip = params.min_seq_len
-      predictions = dnn_model(model_ftrs, training=False)[:, skip:]
+      if params.net == 'RnnWalkNet':
+        predictions = dnn_model(model_ftrs)
+      elif params.net == 'Transformer':
+        predictions = dnn_model(model_ftrs, training=False)[:, skip:]
       labels = labels[:, skip + 1:]
-    # # save attention
-    # with tf.Session() as sess:
-    #   attention_val = sess.run(attention['decoder_layer_4_block2'])
-    #   np.save('attention.npy', attention_val, allow_pickle=False)
-    attention_df = pd.DataFrame(attention['decoder_layer4_block2'].numpy())
+
+    if params.net == 'Transformer':
+      # save attention
+      mesh_names_list = [tf.strings.split(mesh_name, sep='/')[-1] for mesh_name in name]  # the name of the mesh on which these walks were taken
+      walks_col = [str(x) for x in np.arange(100)+1]
+      attention_df = pd.DataFrame(data=attention['decoder_layer4_block2'][:, -1, 0, :].numpy(), columns=walks_col)  # take the last attention head of the 1st example in the batch
+      attention_df.insert(0, 'name', mesh_names_list)
+      # attention_dir = os.path.join(os.path.join('~/repo/attenion_df', 'dir_name')
+      # attention_df.to_pickle(attention_dir, pickle_name))
+      ##
     best_pred = tf.math.argmax(predictions, axis=-1)
     #print(tf.squeeze(predictions).shape)
     print("label shape: ", labels.shape)
