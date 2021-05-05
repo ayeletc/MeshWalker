@@ -142,7 +142,7 @@ def train_val(params):
 
     test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='test_accuracy')
 
-    @tf.function
+    # @tf.function
     def test_step(model_ftrs_, labels_, name, epoch, test_iter, one_label_per_model):
         # make attention (log) directory
         if not os.path.isdir(params.attention_dir_name):
@@ -170,7 +170,9 @@ def train_val(params):
 
         if params.net == 'Transformer':
             # save attention
-            mesh_names_list = [tf.strings.split(mesh_name, sep='/')[-1] for mesh_name in name]  # the name of the mesh on which these walks were taken
+            # mesh_names_list = [tf.strings.split(mesh_name, sep='/')[-1] for mesh_name in name]  # the name of the mesh on which these walks were taken
+            mesh_names_list = list(name.numpy())
+            mesh_names_list = [str(tf.strings.split(mesh_name, sep='/')[-1].numpy().decode('utf-8')) for mesh_name in mesh_names_list]
             walks_col = [str(x) for x in np.arange(100)+1]
             attention_df = pd.DataFrame(data=attention['decoder_layer4_block2'][:, -1, 0, :].numpy(), columns=walks_col)  # take the last attention head of the 1st example in the batch
             attention_df.insert(0, 'name', mesh_names_list)
