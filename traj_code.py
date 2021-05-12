@@ -4,6 +4,7 @@ import pyvista as pv
 import pandas as pd
 import trimesh
 from matplotlib import pyplot as plt
+from dataset import *
 
 
 def plot_heat_map(mesh_path='', attention=None):
@@ -14,6 +15,12 @@ def plot_heat_map(mesh_path='', attention=None):
     file_id = file_id.split('_')[1]
 
     vertices = np.asarray(mesh['vertices'])
+    ## try
+    vertices_norm = mesh['vertices']
+    vertices_norm[:, 1] -= vertices_norm[:, 1].min()
+    norm_model.sub_mean_for_data_augmentation = True
+    norm_model(vertices_norm)
+    ##
     faces = np.asarray(mesh['faces'])
     mesh_to_show = vf_to_pd(vertices, faces)
     color_scalar_vector = set_colors(vertices, attention)
@@ -23,7 +30,7 @@ def plot_heat_map(mesh_path='', attention=None):
     attention_full_len = np.zeros(vertices.shape[0])
     for ii in range(attention_full_len.shape[0]):
         for jj in range(attention_val.shape[0]):
-            if (vertices[0, :] == attention_ver[jj, :]).all():
+            if (vertices[ii, :] == attention_ver[jj, :]).all():
                 attention_full_len[ii] = attention_val[jj]
     # color_scalar_vector = set_colors(attention_ver, attention_val)
     color_scalar_vector = set_colors(vertices, attention_full_len)
@@ -60,13 +67,20 @@ def set_colors(vertices, dist_measure):
 
     colors_vector = np.zeros(shape=(len_of_vertex_list))
     ordered_dist_measure = np.argsort(dist_measure)
+    max_value = max(dist_measure)
 
-    for i in range(len(dist_measure)):
-        color = 1 - i/len(dist_measure)
-        colors_vector[ordered_dist_measure[i]] = color
+    # not_aligned_coloring_method = False
+    not_aligned_coloring_method = True
 
+    if not_aligned_coloring_method:
+        for i in range(len(dist_measure)):
+            color = 1 - (dist_measure[i] / max_value)
+            colors_vector[i] = color
+    else:
+        for i in range(len(dist_measure)):
+            color = 1 - i / len(dist_measure)
+            colors_vector[ordered_dist_measure[i]] = color
     return colors_vector
-
 
 
 def vf_to_pd(v, f=None, nd=3):
@@ -299,7 +313,7 @@ def show_walk_on_mesh():
 
 
 def show_attention_on_mesh(pickle_path, type='heatmap'):
-    walk_id = 5
+    walk_id = 15
     mesh_df = pd.read_pickle(pickle_path)
     attention = mesh_df.iloc[walk_id][1:].values
     if type == 'heatmap':

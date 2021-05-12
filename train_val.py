@@ -112,8 +112,8 @@ def train_val(params):
 
     @tf.function
     def train_step(model_ftrs_, labels_, one_label_per_model):
-        sp = model_ftrs_.shape
-        model_ftrs = tf.reshape(model_ftrs_, (-1, sp[-2], sp[-1]))
+        # sp = model_ftrs_.shape
+        # model_ftrs = tf.reshape(model_ftrs_, (-1, sp[-2], sp[-1]))
         with tf.GradientTape() as tape:
             if one_label_per_model:
                 labels = tf.reshape(tf.transpose(tf.stack((labels_,)*params.n_walks_per_model)),(-1,))
@@ -142,7 +142,7 @@ def train_val(params):
 
     test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='test_accuracy')
 
-    # @tf.function
+    @tf.function
     def test_step(model_ftrs_, labels_, name, epoch, test_iter, one_label_per_model):
         # make attention (log) directory
         if not os.path.isdir(params.attention_dir_name):
@@ -150,8 +150,8 @@ def train_val(params):
         cur_attention_dir = os.path.join(params.attention_dir_name, str(epoch))
         if not os.path.isdir(cur_attention_dir):
             os.mkdir(cur_attention_dir)
-        sp = model_ftrs_.shape
-        model_ftrs = tf.reshape(model_ftrs_, (-1, sp[-2], sp[-1]))
+        # sp = model_ftrs_.shape
+        # model_ftrs = tf.reshape(model_ftrs_, (-1, sp[-2], sp[-1]))
         if one_label_per_model:
             labels = tf.reshape(tf.transpose(tf.stack((labels_,) * params.n_walks_per_model)), (-1,))
             if params.net == 'RnnWalkNet':
@@ -168,16 +168,6 @@ def train_val(params):
                 predictions = dnn_model(model_ftrs, training=False)[:, skip:]
             labels = labels[:, skip + 1:]
 
-        if params.net == 'Transformer':
-            # save attention
-            # mesh_names_list = [tf.strings.split(mesh_name, sep='/')[-1] for mesh_name in name]  # the name of the mesh on which these walks were taken
-            mesh_names_list = list(name.numpy())
-            mesh_names_list = [str(tf.strings.split(mesh_name, sep='/')[-1].numpy().decode('utf-8')) for mesh_name in mesh_names_list]
-            walks_col = [str(x) for x in np.arange(100)+1]
-            attention_df = pd.DataFrame(data=attention['decoder_layer4_block2'][:, -1, 0, :].numpy(), columns=walks_col)  # take the last attention head of the 1st example in the batch
-            attention_df.insert(0, 'name', mesh_names_list)
-            attention_df.to_pickle(os.path.join(cur_attention_dir, str(test_iter)))
-            ##
         best_pred = tf.math.argmax(predictions, axis=-1)
         if params.net == 'RnnWalkNet':
             test_accuracy(labels, predictions)
@@ -185,6 +175,25 @@ def train_val(params):
             test_accuracy(tf.expand_dims(labels, 1), tf.squeeze(predictions, 1))
         confusion = tf.math.confusion_matrix(labels=tf.reshape(labels, (-1,)), predictions=tf.reshape(best_pred, (-1,)),
                                              num_classes=params.n_classes)
+        if params.net == 'Transformer':
+            # save attention
+            # mesh_names_list = [tf.strings.split(mesh_name, sep='/')[-1] for mesh_name in name]  # the name of the mesh on which these walks were taken
+            mesh_names_list = list(name.numpy())
+            mesh_names_list = [str(tf.strings.split(mesh_name, sep=':')[-1].numpy().decode('utf-8')) for mesh_name in mesh_names_list]
+            # mesh_names_list = [str(mesh_name.numpy().decode('utf-8')) for mesh_name in mesh_names_list]
+            attention_col = ['attention_' + str(x) for x in np.arange(100)+1]
+            attention_df = pd.DataFrame(data=attention['decoder_layer4_block2'][:, -1, 0, :].numpy(), columns=attention_col)  # take the last attention head of the 1st example in the batch
+            attention_df.insert(0, 'name', mesh_names_list)
+            walks_col = ['walk_x_' + str(x) for x in np.arange(100)+1]
+            walks_col += ['walk_y_' + str(x) for x in np.arange(100) + 1]
+            walks_col += ['walk_z_' + str(x) for x in np.arange(100) + 1]
+            walks_ar = np.concatenate((model_ftrs.numpy()[:, :, 0], model_ftrs.numpy()[:,:,1], model_ftrs.numpy()[:,:,2]), axis=1)
+            walks_df = pd.DataFrame(data=walks_ar, columns=walks_col)
+            full_df = attention_df.join(walks_df)
+            vertices_idx_df = pd.DataFrame(data=vetrices_indices, columns=['vertices_idx'])
+            full_df = full_df.join(vertices_idx_df)
+            full_df.to_pickle(os.path.join(cur_attention_dir, str(test_iter)))
+            ##
         return confusion
     # -------------------------------------
 
@@ -226,7 +235,11 @@ def train_val(params):
             tb = time.time()
             for iter_db in range(train_epoch_size):
                 for dataset_id in range(len(train_datasets)):
-                    name, model_ftrs, labels = train_ds_iters[dataset_id].next()
+                    name, model_ftrs_, labels = train_ds_iters[dataset_id].next()
+                    sp = model_ftrs_.shape
+                    model_ftrs_ = tf.reshape(model_ftrs_, (-1, sp[-2], sp[-1]))
+                    model_ftrs = tf.cast(model_ftrs_[:, :, :3], tf.float32)
+                    vetrices_indices = tf.cast(model_ftrs_[0, :, 3], tf.int16)
                     dataset_type = utils.get_dataset_type_from_name(name)
                     time_msrs['get_train_data'] += time.time() - tb
                     n_iters += 1
@@ -252,7 +265,11 @@ def train_val(params):
             # Run test on part of the test set
             if test_dataset is not None:
                 n_test_iters = 0
-                for name, model_ftrs, labels in test_dataset:
+                for name, model_ftrs_, labels in test_dataset:
+                    sp = model_ftrs_.shape
+                    model_ftrs_ = tf.reshape(model_ftrs_, (-1, sp[-2], sp[-1]))
+                    model_ftrs = tf.cast(model_ftrs_[:,:,:3], tf.float32)
+                    vetrices_indices = tf.cast(model_ftrs_[0, :, 3], tf.int16)
                     n_test_iters += model_ftrs.shape[0]
                     if n_test_iters > params.n_models_per_test_epoch:
                         break
