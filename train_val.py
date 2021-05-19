@@ -13,7 +13,7 @@ import attention_model
 
 
 def train_val(params):
-    utils.next_iter_to_keep = 10000
+    utils.next_iter_to_keep = 1000
     print(utils.color.BOLD + utils.color.RED + 'params.logdir :::: ', params.logdir, utils.color.END)
     print(utils.color.BOLD + utils.color.RED, os.getpid(), utils.color.END)
     utils.backup_python_files_and_params(params)
@@ -121,9 +121,8 @@ def train_val(params):
                     predictions = dnn_model(model_ftrs)
                 elif params.net == 'Transformer':
                     enc_padding_mask, combined_mask, dec_padding_mask = attention_model.create_masks(model_ftrs, labels[:, tf.newaxis])
-                predictions, attenetion_weights = dnn_model(model_ftrs, labels[:, tf.newaxis], True, None, None, None)
+                    predictions, attenetion_weights = dnn_model(model_ftrs, labels[:, tf.newaxis], True, None, None, None)
                 # predictions, attenetion_weights = dnn_model(model_ftrs, labels[:, tf.newaxis], True, enc_padding_mask, combined_mask, dec_padding_mask)
-                print('predictions shape: ', predictions.shape)
             else:
                 labels = tf.reshape(labels_, (-1, sp[-2]))
                 skip = params.min_seq_len
@@ -142,7 +141,7 @@ def train_val(params):
 
     test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='test_accuracy')
 
-    @tf.function
+    # @tf.function
     def test_step(model_ftrs_, labels_, name, epoch, test_iter, one_label_per_model):
         # make attention (log) directory
         if not os.path.isdir(params.attention_dir_name):
@@ -178,6 +177,7 @@ def train_val(params):
         if params.net == 'Transformer':
             # save attention
             # mesh_names_list = [tf.strings.split(mesh_name, sep='/')[-1] for mesh_name in name]  # the name of the mesh on which these walks were taken
+            # print(tf.executing_eagerly())
             mesh_names_list = list(name.numpy())
             mesh_names_list = [str(tf.strings.split(mesh_name, sep=':')[-1].numpy().decode('utf-8')) for mesh_name in mesh_names_list]
             # mesh_names_list = [str(mesh_name.numpy().decode('utf-8')) for mesh_name in mesh_names_list]

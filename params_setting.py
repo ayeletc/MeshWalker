@@ -70,9 +70,9 @@ def set_up_default_params(network_task, run_name, cont_run_number=0):
     params.net_gru_dropout = 0
     params.uniform_starting_point = False
 
-    params.full_accuracy_test = None
+    params.full_accuracy_test = 'classification'
 
-    params.iters_to_train = 60e3
+    params.iters_to_train = 60e3  # 20e3
 
     return params
 

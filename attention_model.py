@@ -158,7 +158,7 @@ class Encoder(tf.keras.layers.Layer):
         self.num_layers = num_layers
 
         self.embedding = walks_embedding.WalksEmbedding(params, d_model)#tf.keras.layers.Embedding(input_vocab_size, d_model)
-        print('Had')
+        # print('Had')
         self.pos_encoding = positional_encoding(maximum_position_encoding, self.d_model)
 
         self.enc_layers = [EncoderLayer(d_model, num_heads, dff, rate) for _ in range(num_layers)]
@@ -172,7 +172,7 @@ class Encoder(tf.keras.layers.Layer):
         x = self.embedding.run(x, True, False, training)
         x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
         x += self.pos_encoding[:, :seq_len, :]
-        print('chad gadia!')
+        # print('chad gadia!')
         x = self.dropout(x, training=training)
         for i in range(self.num_layers):
            x = self.enc_layers[i](x, training, mask)
@@ -230,16 +230,15 @@ class Transformer(tf.keras.Model):
 
         self.final_layer = tf.keras.layers.Dense(params.n_classes, activation='softmax')
 
-    def call(self, inp, tar, training, enc_padding_mask,look_ahead_mask, dec_padding_mask):
+    def call(self, inp, tar, training, enc_padding_mask,look_ahead_mask, dec_padding_mask, classify=False):
         enc_output = self.tokenizer(inp, training, enc_padding_mask)  # (batch_size, inp_seq_len, d_model)
-        print('enc_output.shape', enc_output.shape)
         # dec_output.shape == (batch_size, tar_seq_len, d_model)
         dec_output, attention_weights = self.decoder(
           tar, enc_output, training, look_ahead_mask, dec_padding_mask)
-        print('dec_output.shape', dec_output.shape)
 
         final_output = self.final_layer(dec_output)  # (batch_size, tar_seq_len, target_vocab_size)
-        print('final_output.shape', final_output.shape)
+        if classify:
+            return final_output
         return final_output, attention_weights
 
 
@@ -328,3 +327,9 @@ def create_padding_mask(seq):
 def create_look_ahead_mask(size):
     mask = 1 - tf.linalg.band_part(tf.ones((size, size)), -1, 0)
     return mask  # (seq_len, seq_len)
+
+# def save_weights(self, folder, step=None, keep=False):
+#     if self.manager is not None:
+#         self.manager.save()
+#     if keep:
+#         # super(RnnWalkBase, self).save_weights(folder + '/learned_model2keep__' + str(step).zfill(8) + '.keras')

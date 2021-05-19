@@ -101,6 +101,8 @@ def data_augmentation_rotation(vertices):
 # ------------------------------------------------------------------ #
 # --- Some functions used to set up the RNN input "features" ------- #
 # ------------------------------------------------------------------ #
+
+
 def fill_xyz_features(features, f_idx, vertices, mesh_extra, seq, jumps, seq_len):
     walk = vertices[seq[1:seq_len + 1]]
     features[:, f_idx:f_idx + walk.shape[1]] = walk
@@ -109,21 +111,13 @@ def fill_xyz_features(features, f_idx, vertices, mesh_extra, seq, jumps, seq_len
 
 
 def fill_dxdydz_features(features, f_idx, vertices, mesh_extra, seq, jumps, seq_len):
-    print('in fill_dxdydz_features')
-    print('features shape: ', features.shape)
-    print('seq shape: ', seq.shape)
     walk = np.diff(vertices[seq[:seq_len + 1]], axis=0) * 100
-    print('walk shape: ', walk.shape)
-    print('f_idx: ', f_idx)
     features[:, f_idx:f_idx + walk.shape[1]] = walk
     f_idx += 3
     return f_idx
 
 
 def fill_vertex_indices(features, f_idx, vertices, mesh_extra, seq, jumps, seq_len):
-    print('in fill_vertex_indices')
-    print('features shape: ', features.shape)
-    print('seq shape: ', seq.shape)
     walk = seq[1:seq_len + 1][:, None]
     features[:, f_idx:f_idx + walk.shape[1]] = walk
     f_idx += 1
