@@ -51,216 +51,218 @@ coseg_shape2label = {v: k for k, v in enumerate(coseg_labels)}
 
 
 def calc_mesh_area(mesh):
-  t_mesh = trimesh.Trimesh(vertices=mesh['vertices'], faces=mesh['faces'], process=False)
-  mesh['area_faces'] = t_mesh.area_faces
-  mesh['area_vertices'] = np.zeros((mesh['vertices'].shape[0]))
-  for f_index, f in enumerate(mesh['faces']):
-    for v in f:
-      mesh['area_vertices'][v] += mesh['area_faces'][f_index] / f.size
+    t_mesh = trimesh.Trimesh(vertices=mesh['vertices'], faces=mesh['faces'], process=False)
+    mesh['area_faces'] = t_mesh.area_faces
+    mesh['area_vertices'] = np.zeros((mesh['vertices'].shape[0]))
+    for f_index, f in enumerate(mesh['faces']):
+        for v in f:
+            mesh['area_vertices'][v] += mesh['area_faces'][f_index] / f.size
 
 
 def calc_vertex_labels_from_face_labels(mesh, face_labels):
-  vertices = mesh['vertices']
-  faces = mesh['faces']
-  all_vetrex_labels = [[] for _ in range(vertices.shape[0])]
-  vertex_labels = -np.ones((vertices.shape[0],), dtype=np.int)
-  n_classes = int(np.max(face_labels))
-  assert np.min(face_labels) == 1 # min label is 1, for compatibility to human_seg labels representation
-  v_labels_fuzzy = -np.ones((vertices.shape[0], n_classes))
-  for i in range(faces.shape[0]):
-    label = face_labels[i]
-    for f in faces[i]:
-      all_vetrex_labels[f].append(label)
-  for i in range(vertices.shape[0]):
-    counts = np.bincount(all_vetrex_labels[i])
-    vertex_labels[i] = np.argmax(counts)
-    v_labels_fuzzy[i] = np.zeros((1, n_classes))
-    for j in all_vetrex_labels[i]:
-      v_labels_fuzzy[i, int(j) - 1] += 1 / len(all_vetrex_labels[i])
-  return vertex_labels, v_labels_fuzzy
+    vertices = mesh['vertices']
+    faces = mesh['faces']
+    all_vetrex_labels = [[] for _ in range(vertices.shape[0])]
+    vertex_labels = -np.ones((vertices.shape[0],), dtype=np.int)
+    n_classes = int(np.max(face_labels))
+    assert np.min(face_labels) == 1  # min label is 1, for compatibility to human_seg labels representation
+    v_labels_fuzzy = -np.ones((vertices.shape[0], n_classes))
+    for i in range(faces.shape[0]):
+        label = face_labels[i]
+        for f in faces[i]:
+            all_vetrex_labels[f].append(label)
+    for i in range(vertices.shape[0]):
+        counts = np.bincount(all_vetrex_labels[i])
+        vertex_labels[i] = np.argmax(counts)
+        v_labels_fuzzy[i] = np.zeros((1, n_classes))
+        for j in all_vetrex_labels[i]:
+            v_labels_fuzzy[i, int(j) - 1] += 1 / len(all_vetrex_labels[i])
+    return vertex_labels, v_labels_fuzzy
 
 
 def prepare_edges_and_kdtree(mesh):
-  vertices = mesh['vertices']
-  faces = mesh['faces']
-  mesh['edges'] = [set() for _ in range(vertices.shape[0])]
-  for i in range(faces.shape[0]):
-    for v in faces[i]:
-      mesh['edges'][v] |= set(faces[i])
-  for i in range(vertices.shape[0]):
-    if i in mesh['edges'][i]:
-      mesh['edges'][i].remove(i)
-    mesh['edges'][i] = list(mesh['edges'][i])
-  max_vertex_degree = np.max([len(e) for e in mesh['edges']])
-  for i in range(vertices.shape[0]):
-    if len(mesh['edges'][i]) < max_vertex_degree:
-      mesh['edges'][i] += [-1] * (max_vertex_degree - len(mesh['edges'][i]))
-  mesh['edges'] = np.array(mesh['edges'], dtype=np.int32)
+    vertices = mesh['vertices']
+    faces = mesh['faces']
+    mesh['edges'] = [set() for _ in range(vertices.shape[0])]
+    for i in range(faces.shape[0]):
+        for v in faces[i]:
+            mesh['edges'][v] |= set(faces[i])
+    for i in range(vertices.shape[0]):
+        if i in mesh['edges'][i]:
+            mesh['edges'][i].remove(i)
+        mesh['edges'][i] = list(mesh['edges'][i])
+    max_vertex_degree = np.max([len(e) for e in mesh['edges']])
+    for i in range(vertices.shape[0]):
+        if len(mesh['edges'][i]) < max_vertex_degree:
+            mesh['edges'][i] += [-1] * (max_vertex_degree - len(mesh['edges'][i]))
+    mesh['edges'] = np.array(mesh['edges'], dtype=np.int32)
 
-  mesh['kdtree_query'] = []
-  t_mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
-  n_nbrs = min(10, vertices.shape[0] - 2)
-  for n in range(vertices.shape[0]):
-    d, i_nbrs = t_mesh.kdtree.query(vertices[n], n_nbrs)
-    i_nbrs_cleared = [inbr for inbr in i_nbrs if inbr != n and inbr < vertices.shape[0]]
-    if len(i_nbrs_cleared) > n_nbrs - 1:
-      i_nbrs_cleared = i_nbrs_cleared[:n_nbrs - 1]
-    mesh['kdtree_query'].append(np.array(i_nbrs_cleared, dtype=np.int32))
-  mesh['kdtree_query'] = np.array(mesh['kdtree_query'])
-  assert mesh['kdtree_query'].shape[1] == (n_nbrs - 1), 'Number of kdtree_query is wrong: ' + str(mesh['kdtree_query'].shape[1])
+    mesh['kdtree_query'] = []
+    t_mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+    n_nbrs = min(10, vertices.shape[0] - 2)
+    for n in range(vertices.shape[0]):
+        d, i_nbrs = t_mesh.kdtree.query(vertices[n], n_nbrs)
+        i_nbrs_cleared = [inbr for inbr in i_nbrs if inbr != n and inbr < vertices.shape[0]]
+        if len(i_nbrs_cleared) > n_nbrs - 1:
+            i_nbrs_cleared = i_nbrs_cleared[:n_nbrs - 1]
+        mesh['kdtree_query'].append(np.array(i_nbrs_cleared, dtype=np.int32))
+    mesh['kdtree_query'] = np.array(mesh['kdtree_query'])
+    assert mesh['kdtree_query'].shape[1] == (n_nbrs - 1), 'Number of kdtree_query is wrong: ' + str(mesh['kdtree_query'].shape[1])
 
 
 def add_fields_and_dump_model(mesh_data, fileds_needed, out_fn, dataset_name, dump_model=True):
-  m = {}
-  for k, v in mesh_data.items():
-    if k in fileds_needed:
-      m[k] = v
-  for field in fileds_needed:
-    if field not in m.keys():
-      if field == 'labels':
-        m[field] = np.zeros((0,))
-      if field == 'dataset_name':
-        m[field] = dataset_name
-      if field == 'walk_cache':
-        m[field] = np.zeros((0,))
-      if field == 'kdtree_query' or field == 'edges':
-        prepare_edges_and_kdtree(m)
+    m = {}
+    for k, v in mesh_data.items():
+        if k in fileds_needed:
+            m[k] = v
+    for field in fileds_needed:
+        if field not in m.keys():
+            if field == 'labels':
+                m[field] = np.zeros((0,))
+            if field == 'dataset_name':
+                m[field] = dataset_name
+            if field == 'walk_cache':
+                m[field] = np.zeros((0,))
+            if field == 'kdtree_query' or field == 'edges':
+                prepare_edges_and_kdtree(m)
 
-  if dump_model:
-    np.savez(out_fn, **m)
+    if dump_model:
+        np.savez(out_fn, **m)
 
-  return m
+    return m
 
 
 def get_sig17_seg_bm_labels(mesh, file, seg_path):
-  # Finding the best match file name .. :
-  in_to_check = file.replace('obj', 'txt')
-  in_to_check = in_to_check.replace('off', 'txt')
-  in_to_check = in_to_check.replace('_fix_orientation', '')
-  if in_to_check.find('MIT_animation') != -1 and in_to_check.split('/')[-1].startswith('mesh_'):
-    in_to_check = '/'.join(in_to_check.split('/')[:-2])
-    in_to_check = in_to_check.replace('MIT_animation/meshes_', 'mit/mit_')
-    in_to_check += '.txt'
-  elif in_to_check.find('/scape/') != -1:
-    in_to_check = '/'.join(in_to_check.split('/')[:-1])
-    in_to_check += '/scape.txt'
-  elif in_to_check.find('/faust/') != -1:
-    in_to_check = '/'.join(in_to_check.split('/')[:-1])
-    in_to_check += '/faust.txt'
+    # Finding the best match file name .. :
+    in_to_check = file.replace('obj', 'txt')
+    in_to_check = in_to_check.replace('off', 'txt')
+    in_to_check = in_to_check.replace('_fix_orientation', '')
+    if in_to_check.find('MIT_animation') != -1 and in_to_check.split('/')[-1].startswith('mesh_'):
+        in_to_check = '/'.join(in_to_check.split('/')[:-2])
+        in_to_check = in_to_check.replace('MIT_animation/meshes_', 'mit/mit_')
+        in_to_check += '.txt'
+    elif in_to_check.find('/scape/') != -1:
+        in_to_check = '/'.join(in_to_check.split('/')[:-1])
+        in_to_check += '/scape.txt'
+    elif in_to_check.find('/faust/') != -1:
+        in_to_check = '/'.join(in_to_check.split('/')[:-1])
+        in_to_check += '/faust.txt'
 
-  seg_full_fn = []
-  for fn in Path(seg_path).rglob('*.txt'):
-    tmp = str(fn)
-    tmp = tmp.replace('/segs/', '/meshes/')
-    tmp = tmp.replace('_full', '')
-    tmp = tmp.replace('shrec_', '')
-    tmp = tmp.replace('_corrected', '')
-    if tmp == in_to_check:
-      seg_full_fn.append(str(fn))
-  if len(seg_full_fn) == 1:
-    seg_full_fn = seg_full_fn[0]
-  else:
-    print('\nin_to_check', in_to_check)
-    print('tmp', tmp)
-    raise Exception('!!')
-  face_labels = np.loadtxt(seg_full_fn)
+    seg_full_fn = []
+    for fn in Path(seg_path).rglob('*.txt'):
+        tmp = str(fn)
+        tmp = tmp.replace('/segs/', '/meshes/')
+        tmp = tmp.replace('_full', '')
+        tmp = tmp.replace('shrec_', '')
+        tmp = tmp.replace('_corrected', '')
+        if tmp == in_to_check:
+            seg_full_fn.append(str(fn))
+    if len(seg_full_fn) == 1:
+        seg_full_fn = seg_full_fn[0]
+    else:
+        print('\nin_to_check', in_to_check)
+        print('tmp', tmp)
+        raise Exception('!!')
+    face_labels = np.loadtxt(seg_full_fn)
 
-  if FIX_BAD_ANNOTATION_HUMAN_15 and file.endswith('test/shrec/15.off'):
-    face_center = []
-    for f in mesh.faces:
-      face_center.append(np.mean(mesh.vertices[f, :], axis=0))
-    face_center = np.array(face_center)
-    idxs = (face_labels == 6) * (face_center[:, 0] < 0) * (face_center[:, 1] < -0.4)
-    face_labels[idxs] = 7
-    np.savetxt(seg_full_fn + '.fixed.txt', face_labels.astype(np.int))
+    if FIX_BAD_ANNOTATION_HUMAN_15 and file.endswith('test/shrec/15.off'):
+        face_center = []
+        for f in mesh.faces:
+            face_center.append(np.mean(mesh.vertices[f, :], axis=0))
+        face_center = np.array(face_center)
+        idxs = (face_labels == 6) * (face_center[:, 0] < 0) * (face_center[:, 1] < -0.4)
+        face_labels[idxs] = 7
+        np.savetxt(seg_full_fn + '.fixed.txt', face_labels.astype(np.int))
 
-  return face_labels
+    return face_labels
 
 
 def get_labels(dataset_name, mesh, file, fn2labels_map=None):
-  v_labels_fuzzy = np.zeros((0,))
-  if dataset_name == 'faust':
-    face_labels = np.load('faust_labels/faust_part_segmentation.npy').astype(np.int)
-    vertex_labels, v_labels_fuzzy = calc_vertex_labels_from_face_labels(mesh, face_labels)
-    model_label = np.zeros((0,))
-    return model_label, vertex_labels, v_labels_fuzzy
-  elif dataset_name.startswith('coseg') or dataset_name == 'human_seg_from_meshcnn':
-    labels_fn = '/'.join(file.split('/')[:-2]) + '/seg/' + file.split('/')[-1].split('.')[-2] + '.eseg'
-    e_labels = np.loadtxt(labels_fn)
-    v_labels = [[] for _ in range(mesh['vertices'].shape[0])]
-    faces = mesh['faces']
+    v_labels_fuzzy = np.zeros((0,))
+    if dataset_name == 'faust':
+        face_labels = np.load('faust_labels/faust_part_segmentation.npy').astype(np.int)
+        vertex_labels, v_labels_fuzzy = calc_vertex_labels_from_face_labels(mesh, face_labels)
+        model_label = np.zeros((0,))
+        return model_label, vertex_labels, v_labels_fuzzy
+    elif dataset_name.startswith('coseg') or dataset_name == 'human_seg_from_meshcnn':
+        labels_fn = '/'.join(file.split('/')[:-2]) + '/seg/' + file.split('/')[-1].split('.')[-2] + '.eseg'
+        e_labels = np.loadtxt(labels_fn)
+        v_labels = [[] for _ in range(mesh['vertices'].shape[0])]
+        faces = mesh['faces']
 
-    fuzzy_labels_fn = '/'.join(file.split('/')[:-2]) + '/sseg/' + file.split('/')[-1].split('.')[-2] + '.seseg'
-    seseg_labels = np.loadtxt(fuzzy_labels_fn)
-    v_labels_fuzzy = np.zeros((mesh['vertices'].shape[0], seseg_labels.shape[1]))
+        fuzzy_labels_fn = '/'.join(file.split('/')[:-2]) + '/sseg/' + file.split('/')[-1].split('.')[-2] + '.seseg'
+        seseg_labels = np.loadtxt(fuzzy_labels_fn)
+        v_labels_fuzzy = np.zeros((mesh['vertices'].shape[0], seseg_labels.shape[1]))
 
-    edge2key = dict()
-    edges = []
-    edges_count = 0
-    for face_id, face in enumerate(faces):
-      faces_edges = []
-      for i in range(3):
-        cur_edge = (face[i], face[(i + 1) % 3])
-        faces_edges.append(cur_edge)
-      for idx, edge in enumerate(faces_edges):
-        edge = tuple(sorted(list(edge)))
-        faces_edges[idx] = edge
-        if edge not in edge2key:
-          v_labels_fuzzy[edge[0]] += seseg_labels[edges_count]
-          v_labels_fuzzy[edge[1]] += seseg_labels[edges_count]
+        edge2key = dict()
+        edges = []
+        edges_count = 0
+        for face_id, face in enumerate(faces):
+            faces_edges = []
+            for i in range(3):
+                cur_edge = (face[i], face[(i + 1) % 3])
+                faces_edges.append(cur_edge)
+            for idx, edge in enumerate(faces_edges):
+                edge = tuple(sorted(list(edge)))
+                faces_edges[idx] = edge
+                if edge not in edge2key:
+                    v_labels_fuzzy[edge[0]] += seseg_labels[edges_count]
+                    v_labels_fuzzy[edge[1]] += seseg_labels[edges_count]
 
-          edge2key[edge] = edges_count
-          edges.append(list(edge))
-          v_labels[edge[0]].append(e_labels[edges_count])
-          v_labels[edge[1]].append(e_labels[edges_count])
-          edges_count += 1
+                    edge2key[edge] = edges_count
+                    edges.append(list(edge))
+                    v_labels[edge[0]].append(e_labels[edges_count])
+                    v_labels[edge[1]].append(e_labels[edges_count])
+                    edges_count += 1
 
-    assert np.max(np.sum(v_labels_fuzzy != 0, axis=1)) <= 3, 'Number of non-zero labels must not acceeds 3!'
+        assert np.max(np.sum(v_labels_fuzzy != 0, axis=1)) <= 3, 'Number of non-zero labels must not acceeds 3!'
 
-    vertex_labels = []
-    for l in v_labels:
-      l2add = np.argmax(np.bincount(l))
-      vertex_labels.append(l2add)
-    vertex_labels = np.array(vertex_labels)
-    model_label = np.zeros((0,))
+        vertex_labels = []
+        for l in v_labels:
+            l2add = np.argmax(np.bincount(l))
+            vertex_labels.append(l2add)
+        vertex_labels = np.array(vertex_labels)
+        model_label = np.zeros((0,))
 
-    return model_label, vertex_labels, v_labels_fuzzy
-  else:
-    tmp = file.split('/')[-1]
-    model_name = '_'.join(tmp.split('_')[:-1])
-    if dataset_name.lower().startswith('modelnet'):
-      model_label = model_net_shape2label[model_name]
-    elif dataset_name.lower().startswith('cubes'):
-      model_label = cubes_shape2label[model_name]
-    elif dataset_name.lower().startswith('shrec11'):
-      model_name = file.split('/')[-3]
-      if fn2labels_map is None:
-        model_label = shrec11_shape2label[model_name]
-      else:
-        file_index = int(file.split('.')[-2].split('T')[-1])
-        model_label = fn2labels_map[file_index]
+        return model_label, vertex_labels, v_labels_fuzzy
     else:
-      raise Exception('Cannot find labels for the dataset')
-    vertex_labels = np.zeros((0,))
-    return model_label, vertex_labels, v_labels_fuzzy
+        tmp = file.split('/')[-1]
+        model_name = '_'.join(tmp.split('_')[:-1])
+        if dataset_name.lower().startswith('modelnet'):
+            model_label = model_net_shape2label[model_name]
+        elif dataset_name.lower().startswith('cubes'):
+            model_label = cubes_shape2label[model_name]
+        elif dataset_name.lower().startswith('shrec11'):
+              model_name = file.split('/')[-3]
+              if fn2labels_map is None:
+                model_label = shrec11_shape2label[model_name]
+              else:
+                file_index = int(file.split('.')[-2].split('T')[-1])
+                model_label = fn2labels_map[file_index]
+        else:
+            raise Exception('Cannot find labels for the dataset')
+        vertex_labels = np.zeros((0,))
+        return model_label, vertex_labels, v_labels_fuzzy
+
 
 def fix_labels_by_dist(vertices, orig_vertices, labels_orig):
-  labels = -np.ones((vertices.shape[0], ))
+    labels = -np.ones((vertices.shape[0], ))
 
-  for i, vertex in enumerate(vertices):
-    d = np.linalg.norm(vertex - orig_vertices, axis=1)
-    orig_idx = np.argmin(d)
-    labels[i] = labels_orig[orig_idx]
+    for i, vertex in enumerate(vertices):
+        d = np.linalg.norm(vertex - orig_vertices, axis=1)
+        orig_idx = np.argmin(d)
+        labels[i] = labels_orig[orig_idx]
 
-  return labels
+    return labels
+
 
 def get_faces_belong_to_vertices(vertices, faces):
-  faces_belong = []
-  for face in faces:
-    used = np.any([v in vertices for v in face])
-    if used:
-      faces_belong.append(face)
-  return np.array(faces_belong)
+    faces_belong = []
+    for face in faces:
+        used = np.any([v in vertices for v in face])
+        if used:
+            faces_belong.append(face)
+    return np.array(faces_belong)
 
 
 def remesh(mesh_orig, target_n_faces, add_labels=False, labels_orig=None):
@@ -279,37 +281,37 @@ def remesh(mesh_orig, target_n_faces, add_labels=False, labels_orig=None):
 
 
 def load_meshes(model_fns):
-  f_names = glob.glob(model_fns)
-  joint_mesh_vertices = []
-  joint_mesh_faces = []
-  for fn in f_names:
-    mesh_ = trimesh.load_mesh(fn)
-    vertex_offset = len(joint_mesh_vertices)
-    joint_mesh_vertices += mesh_.vertices.tolist()
-    faces = mesh_.faces + vertex_offset
-    joint_mesh_faces += faces.tolist()
+    f_names = glob.glob(model_fns)
+    joint_mesh_vertices = []
+    joint_mesh_faces = []
+    for fn in f_names:
+        mesh_ = trimesh.load_mesh(fn)
+        vertex_offset = len(joint_mesh_vertices)
+        joint_mesh_vertices += mesh_.vertices.tolist()
+        faces = mesh_.faces + vertex_offset
+        joint_mesh_faces += faces.tolist()
 
-  mesh = open3d.geometry.TriangleMesh()
-  mesh.vertices = open3d.utility.Vector3dVector(joint_mesh_vertices)
-  mesh.triangles = open3d.utility.Vector3iVector(joint_mesh_faces)
+    mesh = open3d.geometry.TriangleMesh()
+    mesh.vertices = open3d.utility.Vector3dVector(joint_mesh_vertices)
+    mesh.triangles = open3d.utility.Vector3iVector(joint_mesh_faces)
 
-  return mesh
+    return mesh
 
 
 def load_mesh(model_fn, classification=True):
-  if 1:  # To load and clean up mesh - "remove vertices that share position"
-    if classification:
-      mesh_ = trimesh.load_mesh(model_fn, process=True)
-      mesh_.remove_duplicate_faces()
+    if 1:  # To load and clean up mesh - "remove vertices that share position"
+        if classification:
+            mesh_ = trimesh.load_mesh(model_fn, process=True)
+            mesh_.remove_duplicate_faces()
+        else:
+            mesh_ = trimesh.load_mesh(model_fn, process=False)
+        mesh = open3d.geometry.TriangleMesh()
+        mesh.vertices = open3d.utility.Vector3dVector(mesh_.vertices)
+        mesh.triangles = open3d.utility.Vector3iVector(mesh_.faces)
     else:
-      mesh_ = trimesh.load_mesh(model_fn, process=False)
-    mesh = open3d.geometry.TriangleMesh()
-    mesh.vertices = open3d.utility.Vector3dVector(mesh_.vertices)
-    mesh.triangles = open3d.utility.Vector3iVector(mesh_.faces)
-  else:
-    mesh = open3d.io.read_triangle_mesh(model_fn)
+        mesh = open3d.io.read_triangle_mesh(model_fn)
 
-  return mesh
+    return mesh
 
 def create_tmp_dataset(model_fn, p_out, n_target_faces):
     fileds_needed = ['vertices', 'faces', 'edge_features', 'edges_map', 'edges', 'kdtree_query',
@@ -359,32 +361,33 @@ def prepare_directory_from_scratch(dataset_name, pathname_expansion=None, p_out=
 
 # ------------------------------------------------------- #
 
+
 def prepare_modelnet40():
-  n_target_faces = [1000, 2000, 4000]
-  labels2use = model_net_labels
-  for i, name in tqdm(enumerate(labels2use)):
-    for part in ['test', 'train']:
-      pin = os.path.expanduser('~') + '/mesh_walker/datasets_raw/ModelNet40/' + name + '/' + part + '/'
-      p_out = os.path.expanduser('~') + '/mesh_walker/datasets_processed-tmp/modelnet40/'
-      prepare_directory_from_scratch('modelnet40', pathname_expansion=pin + '*.off',
-                                     p_out=p_out, add_labels='modelnet', n_target_faces=n_target_faces,
-                                     fn_prefix=part + '_', verbose=False)
+    n_target_faces = [1000, 2000, 4000]
+    labels2use = model_net_labels
+    for i, name in tqdm(enumerate(labels2use)):
+        for part in ['test', 'train']:
+            pin = os.path.expanduser('~') + '/mesh_walker/datasets_raw/ModelNet40/' + name + '/' + part + '/'
+            p_out = os.path.expanduser('~') + '/mesh_walker/datasets_processed-tmp/modelnet40/'
+            prepare_directory_from_scratch('modelnet40', pathname_expansion=pin + '*.off',
+                                             p_out=p_out, add_labels='modelnet', n_target_faces=n_target_faces,
+                                             fn_prefix=part + '_', verbose=False)
 
 
 def prepare_cubes(labels2use=cubes_labels,
                   path_in=os.path.expanduser('~') + '/datasets_processed/cubes/',
                   p_out=os.path.expanduser('~') + '/mesh_walker/datasets_processed-tmp/cubes_tmp'):
-  dataset_name = 'cubes'
-  if not os.path.isdir(p_out):
-    os.makedirs(p_out)
+    dataset_name = 'cubes'
+    if not os.path.isdir(p_out):
+        os.makedirs(p_out)
 
-  for i, name in enumerate(labels2use):
-    print('-->>>', name)
-    for part in ['test', 'train']:
-      pin = path_in + name + '/' + part + '/'
-      prepare_directory_from_scratch(dataset_name, pathname_expansion=pin + '*.obj',
-                                     p_out=p_out, add_labels=dataset_name, fn_prefix=part + '_', n_target_faces=[np.inf],
-                                     classification=False)
+    for i, name in enumerate(labels2use):
+        print('-->>>', name)
+        for part in ['test', 'train']:
+            pin = path_in + name + '/' + part + '/'
+            prepare_directory_from_scratch(dataset_name, pathname_expansion=pin + '*.obj',
+                                         p_out=p_out, add_labels=dataset_name, fn_prefix=part + '_', n_target_faces=[np.inf],
+                                         classification=False)
 
 
 def prepare_shrec11_from_raw():
@@ -523,15 +526,15 @@ def prepare_seg_from_meshcnn(dataset, subfolder=None):
 def prepare_coseg(dataset_name='coseg',
                   path_in=os.path.expanduser('~') + '/datasets_processed/coseg/',
                   p_out_root=os.path.expanduser('~') + '/mesh_walker/datasets_processed-tmp/coseg_tmp2'):
-  for sub_folder in os.listdir(path_in):
-    p_out = p_out_root + '/' + sub_folder
-    if not os.path.isdir(p_out):
-      os.makedirs(p_out + '/' + sub_folder)
+    for sub_folder in os.listdir(path_in):
+        p_out = p_out_root + '/' + sub_folder
+        if not os.path.isdir(p_out):
+            os.makedirs(p_out + '/' + sub_folder)
 
-    for part in ['test', 'train']:
-      pin = path_in + '/' + sub_folder + '/' + part + '/'
-      prepare_directory_from_scratch(sub_folder, pathname_expansion=pin + '*.obj',
-                                     p_out=p_out, add_labels=dataset_name, fn_prefix=part + '_', n_target_faces=[np.inf])
+        for part in ['test', 'train']:
+            pin = path_in + '/' + sub_folder + '/' + part + '/'
+            prepare_directory_from_scratch(sub_folder, pathname_expansion=pin + '*.obj',
+                                        p_out=p_out, add_labels=dataset_name, fn_prefix=part + '_', n_target_faces=[np.inf])
 
 # ------------------------------------------------------- #
 
