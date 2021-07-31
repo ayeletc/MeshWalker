@@ -6,6 +6,7 @@ import tensorflow as tf
 from tqdm import tqdm
 
 import rnn_model
+import attention_model
 import utils
 import dataset
 
@@ -36,41 +37,38 @@ def calc_accuracy_test(dataset_expansion=False, logdir=None, labels=None, iter2u
     test_dataset, n_models_to_test = dataset.tf_mesh_dataset(params, dataset_expansion, mode=params.network_task,
                                                              shuffle_size=0, permute_file_names=True, min_max_faces2use=min_max_faces2use,
                                                              must_run_on_all=True, data_augmentation=data_augmentation)
-
-    # If dnn_model is not provided, load it
+        # If dnn_model is not provided, load it
     if dnn_model is None:
         dnn_model = rnn_model.RnnWalkNet(params, params.n_classes, params.net_input_dim, model_fn,
                                        model_must_be_load=True, dump_model_visualization=False)
 
     n_pos_all = 0
-    n_classes = 40
+    n_classes = params.n_classes+1
     all_confusion = np.zeros((n_classes, n_classes), dtype=np.int)
     pred_per_model_name = {}
     if params.net == "Transformer":
         # for i, data in tqdm(enumerate(test_dataset), total=n_models_to_test):
         for i, data in tqdm(enumerate(test_dataset), total=n_models_to_test):
-            name, model_ftrs_, labels = data
+            name, model_ftrs_, labels_ = data
             sp = model_ftrs_.shape
             model_ftrs_ = tf.reshape(model_ftrs_, (-1, sp[-2], sp[-1]))
             model_ftrs = tf.cast(model_ftrs_[:, :, :3], tf.float32)
-            # name, ftrs, gt = data
+            labels = tf.repeat(labels_, n_walks_per_model)
             model_fn = name.numpy()[0].decode()
             model_name, n_faces = utils.get_model_name_from_npz_fn(model_fn)
-            # assert ftrs.shape[0] == 1, 'Must have one model per batch for test'
-            # ftrs = tf.reshape(ftrs, ftrs.shape[1:])
-            # gt = gt.numpy()[0]
-            # ftr2use = ftrs.numpy()
-            predictions = dnn_model(model_ftrs, labels[:, tf.newaxis], training=False, enc_padding_mask=None, look_ahead_mask=None, dec_padding_mask=None, classify=True)
-            # predictions = dnn_model(ftr2use, gt, training=False, enc_padding_mask=None, look_ahead_mask=None, dec_padding_mask=None, classify=True)
-            mean_pred = np.mean(predictions, axis=0)
+            # predictions = dnn_model(model_ftrs, labels[:, tf.newaxis], training=False,
+            #                   enc_padding_mask=None, look_ahead_mask=None, dec_padding_mask=None, classify=True)
+            predictions, prediction_probabilities = evaluate(dnn_model, model_ftrs, params, get_attention=False)
+
+            mean_pred = np.mean(prediction_probabilities, axis=0)
             max_hit = np.argmax(mean_pred)
 
             if model_name not in pred_per_model_name.keys():
-                pred_per_model_name[model_name] = [labels, np.zeros_like(mean_pred)]
-            pred_per_model_name[model_name][1] += mean_pred
+                pred_per_model_name[model_name] = [labels_[0], np.zeros_like(mean_pred)]
+            pred_per_model_name[model_name][1] += mean_pred[-1, :]
 
-            all_confusion[int(labels), max_hit] += 1
-            n_pos_all += (max_hit == labels).numpy()[0]
+            all_confusion[int(labels_[0]), max_hit] += 1
+            n_pos_all += (max_hit == labels_[0]).numpy()
     elif params.net == "RnnWalkNet":
         for i, data in tqdm(enumerate(test_dataset), total=n_models_to_test):
             name, ftrs, gt = data
@@ -101,7 +99,7 @@ def calc_accuracy_test(dataset_expansion=False, logdir=None, labels=None, iter2u
         max_hit = np.argmax(pred)
         all_confusion_all_faces[gt, max_hit] += 1
         n_models += 1
-        n_sucesses += (max_hit == gt).numpy()[0]
+        n_sucesses += (max_hit == gt).numpy()
     mean_accuracy_all_faces = n_sucesses / n_models
 
     # Print list of accuracy per model
@@ -118,6 +116,29 @@ def calc_accuracy_test(dataset_expansion=False, logdir=None, labels=None, iter2u
     mean_acc_per_class = np.mean(acc_per_class)
 
     return [mean_accuracy_all_faces, mean_acc_per_class], dnn_model
+
+
+def evaluate(dnn_model, model_ftrs, params, get_attention=True):
+    sp = model_ftrs.shape
+    # output = tf.zeros((labels_length, 1))
+    # output = tf.cast(tf.random.uniform((labels_length, 1), minval=0, maxval=29), tf.uint8)
+    output = tf.cast(tf.ones((sp[0], 1)) * 30, tf.int64)  # tf.ones((labels_length, 1))
+
+    model_ftrs = tf.concat([tf.zeros([sp[0], 1, sp[2]]), model_ftrs], axis=1)
+    for _ in range(params.output_size-1):
+        # enc_padding_mask, combined_mask, dec_padding_mask = create_masks(model_ftrs, output)
+        # predictions, attention = dnn_model(model_ftrs, output, training=False,
+        #                                     enc_padding_mask=None, look_ahead_mask=None, dec_padding_mask=None)
+
+        enc_padding_mask, combined_mask, dec_padding_mask = attention_model.create_masks(model_ftrs, output)
+        predictions_prob, attenetion_weights = dnn_model(model_ftrs, output,
+                                                    True, enc_padding_mask=None, look_ahead_mask=combined_mask,
+                                                    dec_padding_mask=None)
+        predictions_labels = tf.argmax(predictions_prob[:, -1, :], axis=-1)
+        output = tf.concat([output, predictions_labels[:, tf.newaxis]], axis=-1)
+    if not get_attention:
+        return output, predictions_prob
+    return output, predictions_prob, attenetion_weights
 
 
 if __name__ == '__main__':

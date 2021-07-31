@@ -44,7 +44,7 @@ def set_up_default_params(network_task, run_name, cont_run_number=0):
         params.one_label_per_model = True
         params.train_loss = ['cros_entr']
     elif params.network_task == 'semantic_segmentation':
-        params.n_walks_per_model = 4
+        params.n_walks_per_model = 1 #4
         params.one_label_per_model = False
         params.train_loss = ['cros_entr']
     else:
@@ -70,7 +70,7 @@ def set_up_default_params(network_task, run_name, cont_run_number=0):
     params.net_gru_dropout = 0
     params.uniform_starting_point = False
 
-    params.full_accuracy_test = 'classification'
+    params.full_accuracy_test = None # 'classification'
 
     params.iters_to_train = 60e3  # 20e3
 
@@ -130,13 +130,19 @@ def shrec11_params(split_part):
     # split_part is one of the following:
     # 10-10_A / 10-10_B / 10-10_C
     # 16-04_A / 16-04_B / 16-04_C
-    params = set_up_default_params('classification', 'shrec11_' + split_part, 0)
-    params.n_classes = 30
+    mission = 'semantic_segmentation'
+    params = set_up_default_params(mission, 'shrec11_' + split_part, 0)
     params.seq_len = 100
     params.min_seq_len = int(params.seq_len / 2)
+    params.n_classes = 30
+    if mission is 'semantic_segmentation':
+        params.output_size = 6# TODO: params.seq_len + 1
+
+    else:
+        params.output_size = 2
 
     params.datasets2use['train'] = ['datasets_processed/shrec11/' + split_part + '/train/*.npz']
-    params.datasets2use['test']  = ['datasets_processed/shrec11/' + split_part + '/test/*.npz']
+    params.datasets2use['test']  = ['datasets_processed/shrec11/' + split_part + '/test/*.npz']  # skip test
 
     params.train_data_augmentation = {'rotation': 360}
 

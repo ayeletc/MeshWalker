@@ -46,8 +46,7 @@ class MultiHeadAttention(tf.keras.layers.Layer):
 
         # scaled_attention.shape == (batch_size, num_heads, seq_len_q, depth)
         # attention_weights.shape == (batch_size, num_heads, seq_len_q, seq_len_k)
-        scaled_attention, attention_weights = scaled_dot_product_attention(
-            q, k, v, mask)
+        scaled_attention, attention_weights = scaled_dot_product_attention(q, k, v, mask)
 
         scaled_attention = tf.transpose(scaled_attention, perm=[0, 2, 1, 3])  # (batch_size, seq_len_q, num_heads, depth)
 
@@ -84,37 +83,37 @@ class EncoderLayer(tf.keras.layers.Layer):
         return out2
 
 
-class EncoderLayer(tf.keras.layers.Layer):
-    def __init__(self, d_model, num_heads, dff, rate=0.1):
-        super(EncoderLayer, self).__init__()
-
-        self.mha = MultiHeadAttention(d_model, num_heads)
-        self.ffn = point_wise_feed_forward_network(d_model, dff)
-
-        self.layernorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-        self.layernorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-
-        self.dropout1 = tf.keras.layers.Dropout(rate)
-        self.dropout2 = tf.keras.layers.Dropout(rate)
-
-    def call(self, x, training, mask):
-
-        attn_output, _ = self.mha(x, x, x, mask)  # (batch_size, input_seq_len, d_model)
-        attn_output = self.dropout1(attn_output, training=training)
-        out1 = self.layernorm1(x + attn_output)  # (batch_size, input_seq_len, d_model)
-
-        ffn_output = self.ffn(out1)  # (batch_size, input_seq_len, d_model)
-        ffn_output = self.dropout2(ffn_output, training=training)
-        out2 = self.layernorm2(out1 + ffn_output)  # (batch_size, input_seq_len, d_model)
-
-        return out2
+# class EncoderLayer(tf.keras.layers.Layer):
+#     def __init__(self, d_model, num_heads, dff, rate=0.1):
+#         super(EncoderLayer, self).__init__()
+#
+#         self.mha = MultiHeadAttention(d_model, num_heads)
+#         self.ffn = point_wise_feed_forward_network(d_model, dff)
+#
+#         self.layernorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+#         self.layernorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+#
+#         self.dropout1 = tf.keras.layers.Dropout(rate)
+#         self.dropout2 = tf.keras.layers.Dropout(rate)
+#
+#     def call(self, x, training, mask):
+#
+#         attn_output, _ = self.mha(x, x, x, mask)  # (batch_size, input_seq_len, d_model)
+#         attn_output = self.dropout1(attn_output, training=training)
+#         out1 = self.layernorm1(x + attn_output)  # (batch_size, input_seq_len, d_model)
+#
+#         ffn_output = self.ffn(out1)  # (batch_size, input_seq_len, d_model)
+#         ffn_output = self.dropout2(ffn_output, training=training)
+#         out2 = self.layernorm2(out1 + ffn_output)  # (batch_size, input_seq_len, d_model)
+#
+#         return out2
 
 
 class DecoderLayer(tf.keras.layers.Layer):
     def __init__(self, d_model, num_heads, dff, rate=0.1):
         super(DecoderLayer, self).__init__()
 
-        # self.mha1 = MultiHeadAttention(d_model, num_heads)
+        self.mha1 = MultiHeadAttention(d_model, num_heads)
         self.mha2 = MultiHeadAttention(d_model, num_heads)
 
         self.ffn = point_wise_feed_forward_network(d_model, dff)
@@ -127,16 +126,16 @@ class DecoderLayer(tf.keras.layers.Layer):
         self.dropout2 = tf.keras.layers.Dropout(rate)
         self.dropout3 = tf.keras.layers.Dropout(rate)
 
-
-    def call(self, x, enc_output, training,
-             look_ahead_mask, padding_mask):
+    def call(self, x, enc_output, training, look_ahead_mask, padding_mask):
         # enc_output.shape == (batch_size, input_seq_len, d_model)
-        # TODO: check uncomment out1 (also in __init__)
-        # attn1, attn_weights_block1 = self.mha1(x, x, x, look_ahead_mask)  # (batch_size, target_seq_len, d_model)
-        # attn1 = self.dropout1(attn1, training=training)
-        # out1 = self.layernorm1(attn1 + x)
-        attn_weights_block1 = None
-        out1 = x
+        # TODO: check comment out1 (also in __init__)
+       # print('d_model', self.mha1.d_model)
+        attn1, attn_weights_block1 = self.mha1(x, x, x, look_ahead_mask)  # (batch_size, target_seq_len, d_model)
+        #print('attnention.shape', attn1.shape)
+        attn1 = self.dropout1(attn1, training=training)
+        out1 = self.layernorm1(attn1 + x)
+        # attn_weights_block1 = None
+        # out1 = x
         attn2, attn_weights_block2 = self.mha2(
             enc_output, enc_output, out1, padding_mask)  # (batch_size, target_seq_len, d_model)
         attn2 = self.dropout2(attn2, training=training)
@@ -175,7 +174,8 @@ class Encoder(tf.keras.layers.Layer):
         # print('chad gadia!')
         x = self.dropout(x, training=training)
         for i in range(self.num_layers):
-           x = self.enc_layers[i](x, training, mask)
+            x = self.enc_layers[i](x, training, mask)
+
         return x  # (batch_size, input_seq_len, d_model)
 
 
@@ -194,8 +194,7 @@ class Decoder(tf.keras.layers.Layer):
                            for _ in range(num_layers)]
         self.dropout = tf.keras.layers.Dropout(rate)
 
-    def call(self, x, enc_output, training,
-             look_ahead_mask, padding_mask):
+    def call(self, x, enc_output, training, look_ahead_mask, padding_mask):
         # x = inp = walks
         seq_len = tf.shape(x)[1]
         attention_weights = {}
@@ -220,22 +219,21 @@ class Decoder(tf.keras.layers.Layer):
 
 class Transformer(tf.keras.Model):
     def __init__(self, num_layers, d_model, num_heads, dff,
-                  pe_input, pe_target,params, rate=0.1):
+                  pe_input, pe_target, params, rate=0.1):
         super(Transformer, self).__init__()
         self.tokenizer = Encoder(num_layers, d_model, num_heads, dff,
                                   pe_input,params, rate)
 
         self.decoder = Decoder(num_layers, d_model, num_heads, dff,
-                               params.n_classes, pe_target, rate)
+                               params.n_classes+1, pe_target, rate)
 
-        self.final_layer = tf.keras.layers.Dense(params.n_classes, activation='softmax')
+        self.final_layer = tf.keras.layers.Dense(params.n_classes+1, activation='softmax')
 
-    def call(self, inp, tar, training, enc_padding_mask,look_ahead_mask, dec_padding_mask, classify=False):
+    def call(self, inp, tar, training, enc_padding_mask, look_ahead_mask, dec_padding_mask, classify=False):
         enc_output = self.tokenizer(inp, training, enc_padding_mask)  # (batch_size, inp_seq_len, d_model)
         # dec_output.shape == (batch_size, tar_seq_len, d_model)
         dec_output, attention_weights = self.decoder(
           tar, enc_output, training, look_ahead_mask, dec_padding_mask)
-
         final_output = self.final_layer(dec_output)  # (batch_size, tar_seq_len, target_vocab_size)
         if classify:
             return final_output
@@ -244,10 +242,10 @@ class Transformer(tf.keras.Model):
 
 def create_masks(inp, tar):
     # Encoder padding mask
-    enc_padding_mask = create_padding_mask(inp)
+    enc_padding_mask = create_padding_mask(inp[:,:,-1])
     # Used in the 2nd attention block in the decoder.
     # This padding mask is used to mask the encoder outputs.
-    dec_padding_mask = create_padding_mask(inp)
+    dec_padding_mask = create_padding_mask(inp[:,:,-1])
 
     # Used in the 1st attention block in the decoder.
     # It is used to pad and mask future tokens in the input received by
@@ -300,7 +298,8 @@ def scaled_dot_product_attention(q, k, v, mask):
     scaled_attention_logits = matmul_qk / tf.math.sqrt(dk)
 
     # add the mask to the scaled tensor.
-    if mask is not None:    scaled_attention_logits += (mask * -1e9)
+    if mask is not None:
+        scaled_attention_logits += (mask * -1e9)
 
     # softmax is normalized on the last axis (seq_len_k) so that the scores
     # add up to 1.
@@ -327,9 +326,3 @@ def create_padding_mask(seq):
 def create_look_ahead_mask(size):
     mask = 1 - tf.linalg.band_part(tf.ones((size, size)), -1, 0)
     return mask  # (seq_len, seq_len)
-
-# def save_weights(self, folder, step=None, keep=False):
-#     if self.manager is not None:
-#         self.manager.save()
-#     if keep:
-#         # super(RnnWalkBase, self).save_weights(folder + '/learned_model2keep__' + str(step).zfill(8) + '.keras')
