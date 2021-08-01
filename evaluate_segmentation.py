@@ -219,14 +219,13 @@ def evaluate(dnn_model, model_ftrs, params, skip=0, get_attention=True):
     output = tf.cast(tf.ones((sp[0], 1)) * 30, tf.int64)  # tf.ones((labels_length, 1))
 
     model_ftrs = tf.concat([tf.zeros([sp[0], 1, sp[2]]), model_ftrs], axis=1)
-    for _ in range(params.output_size-1-skip):
-        # enc_padding_mask, combined_mask, dec_padding_mask = create_masks(model_ftrs, output)
-        # predictions, attention = dnn_model(model_ftrs, output, training=False,
-        #                                     enc_padding_mask=None, look_ahead_mask=None, dec_padding_mask=None)
-
-        enc_padding_mask, combined_mask, dec_padding_mask = attention_model.create_masks(model_ftrs, output)
-        predictions_prob, attenetion_weights = dnn_model(model_ftrs, output,
-                                                    True, enc_padding_mask=None, look_ahead_mask=combined_mask,
+    num_of_iterations = params.output_size-1-skip
+    if num_of_iterations <= 0:
+        num_of_iterations = 1
+    for _ in range(num_of_iterations):
+        # enc_padding_mask, combined_mask, dec_padding_mask = attention_model.create_masks(model_ftrs, output)
+        predictions_prob, attenetion_weights = dnn_model(model_ftrs, output, training=False,
+                                                    enc_padding_mask=None, look_ahead_mask=None,  # TODO: check if we need the look ahead mask here
                                                     dec_padding_mask=None)
         predictions_labels = tf.argmax(predictions_prob[:, -1, :], axis=-1)
         output = tf.concat([output, predictions_labels[:, tf.newaxis]], axis=-1)

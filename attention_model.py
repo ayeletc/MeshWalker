@@ -227,7 +227,10 @@ class Transformer(tf.keras.Model):
         self.decoder = Decoder(num_layers, d_model, num_heads, dff,
                                params.n_classes+1, pe_target, rate)
 
-        self.final_layer = tf.keras.layers.Dense(params.n_classes+1, activation='softmax')
+        self.final_layer = tf.keras.layers.Dense(params.n_classes+1,
+                                                 kernel_regularizer=tf.keras.regularizers.l2(0.0001),
+                                                 bias_regularizer=tf.keras.regularizers.l2(0.0001),
+                                                 activation='softmax')
 
     def call(self, inp, tar, training, enc_padding_mask, look_ahead_mask, dec_padding_mask, classify=False):
         enc_output = self.tokenizer(inp, training, enc_padding_mask)  # (batch_size, inp_seq_len, d_model)

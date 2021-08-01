@@ -10,6 +10,7 @@ import dataset
 import utils
 import params_setting
 import attention_model
+import attention_model_ref
 import evaluate_classification
 import evaluate_segmentation
 
@@ -52,7 +53,7 @@ def train_val(params):
         # test_dataset, n_tst_items = dataset.tf_mesh_dataset(params, params.datasets2use['test'][0],
         #                                                     mode=mode, size_limit=params.test_dataset_size_limit,
         #                                                     shuffle_size=100, min_max_faces2use=params.test_min_max_faces2use)
-        test_dataset, n_tst_items = dataset.tf_mesh_dataset(params, params.datasets2use['train'][0],
+        test_dataset, n_tst_items = dataset.tf_mesh_dataset(params, params.datasets2use['test'][0],
                                                         mode=mode, size_limit=params.train_dataset_size_limit,
                                                         shuffle_size=100,
                                                         min_max_faces2use=params.train_min_max_faces2use,
@@ -93,7 +94,7 @@ def train_val(params):
         dnn_model = rnn_model.RnnWalkNet(params, params.n_classes, params.net_input_dim, init_net_using, optimizer=optimizer)
     elif params.net == 'Transformer':
         num_layers = 4
-        d_model = 128
+        d_model = 512  # TODO: check if 128 is better
         dff = 512
         num_heads = 8
         dropout_rate = 0.1
@@ -107,6 +108,25 @@ def train_val(params):
                                                 pe_target=1000,
                                                 params=params,
                                                 rate=dropout_rate)
+    elif params.net == 'HierTransformer':
+        num_layers = 4
+        d_model = 512
+        dff = 512
+        num_heads = 8
+        dropout_rate = 0.1
+        dnn_model = attention_model_ref.WalkHierTransformer(num_layers=num_layers,
+                                                d_model=d_model,
+                                                num_heads=num_heads,
+                                                dff=dff,
+                                                # input_vocab_size=tokenizers.pt.get_vocab_size(),
+                                                # target_vocab_size=params.n_classes,
+                                                pe_input=1000,  # TODO: enlarge?
+                                                pe_target=1000,
+                                                params=params,
+                                                input_vocab_size=8500,
+                                                out_features=30,
+                                                rate=dropout_rate)
+
 
     # Other initializations
     # ---------------------
@@ -171,6 +191,20 @@ def train_val(params):
                     predictions, attenetion_weights = dnn_model(model_ftrs, labels,
                                                                 True, enc_padding_mask=None, look_ahead_mask=combined_mask,
                                                                 dec_padding_mask=None)
+                elif params.net == 'HierTransformer':
+                    model_ftrs = tf.concat([tf.zeros([sp[0], 1, sp[2]]), model_ftrs], axis=1)
+                    labels = tf.reshape(tf.transpose(tf.stack((labels_,) * params.n_walks_per_model)), (-1,))
+                    # labels = tf.cast(tf.repeat(labels[:, tf.newaxis], repeats=params.seq_len, axis=1), tf.int32)
+                    # labels = tf.concat([tf.cast(tf.ones([sp[0], 1])*params.n_classes, tf.int32), labels], axis=1)
+                    labels = expand_labels_dim(labels, sp[0], params.output_size, params.n_classes)
+                    enc_padding_mask, combined_mask, dec_padding_mask = attention_model.create_masks(model_ftrs,
+                                                                                                     labels)
+                    predictions, attenetion_weights = dnn_model(model_ftrs, enc_padding_mask=None, training=True, booth=False, classify=True)
+            def count_element(t, element):
+                elements_equal_to_value = tf.equal(t, element)
+                as_ints = tf.cast(elements_equal_to_value, tf.int32)
+                count = tf.reduce_sum(as_ints)
+                return count
 
             def loss_function(real, pred):
                 # mask = tf.math.logical_not(tf.math.equal(real, 0))
@@ -179,6 +213,9 @@ def train_val(params):
                 # mask = tf.cast(mask, dtype=loss_.dtype)
                 # loss_ *= mask
                 # return tf.reduce_sum(loss_) / tf.reduce_sum(mask)
+                n = count_element(pred, 30)
+                if n > 0:
+                    loss_ += loss * 0.25 * (n-1)
                 return tf.reduce_sum(loss_)
 
             seg_train_accuracy(labels, predictions)
@@ -312,7 +349,7 @@ def train_val(params):
                 next_iter_to_log += params.log_freq
 
             # Run test on part of the test set
-            if test_dataset is not None and jj % 23 == 0:
+            if test_dataset is not None and jj % 10 == 0:
                 n_test_iters = 0
                 for name, model_ftrs_, labels in test_dataset:
                     sp = model_ftrs_.shape

@@ -132,7 +132,7 @@ def evaluate(dnn_model, model_ftrs, params, get_attention=True):
 
         enc_padding_mask, combined_mask, dec_padding_mask = attention_model.create_masks(model_ftrs, output)
         predictions_prob, attenetion_weights = dnn_model(model_ftrs, output,
-                                                    True, enc_padding_mask=None, look_ahead_mask=combined_mask,
+                                                    False, enc_padding_mask=None, look_ahead_mask=combined_mask,
                                                     dec_padding_mask=None)
         predictions_labels = tf.argmax(predictions_prob[:, -1, :], axis=-1)
         output = tf.concat([output, predictions_labels[:, tf.newaxis]], axis=-1)
